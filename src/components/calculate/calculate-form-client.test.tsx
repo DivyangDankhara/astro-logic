@@ -35,9 +35,9 @@ describe("CalculateFormClient", () => {
   it("shows validation feedback", async () => {
     const user = userEvent.setup();
 
-    render(<CalculateFormClient />);
+    render(<CalculateFormClient isSignedIn={false} />);
 
-    await user.click(screen.getByRole("button", { name: /generate scientific chart/i }));
+    await user.click(screen.getByRole("button", { name: /generate ad-hoc chart/i }));
 
     expect(
       await screen.findByText("Full name must be at least 2 characters."),
@@ -81,7 +81,7 @@ describe("CalculateFormClient", () => {
       },
     });
 
-    render(<CalculateFormClient />);
+    render(<CalculateFormClient isSignedIn={false} />);
 
     await user.type(screen.getByLabelText(/full name/i), "Test User");
     fireEvent.change(screen.getByLabelText(/time of birth/i), {
@@ -96,17 +96,22 @@ describe("CalculateFormClient", () => {
 
     await selectAnyDate(user);
 
-    await user.click(screen.getByRole("button", { name: /generate scientific chart/i }));
+    await user.click(screen.getByRole("button", { name: /generate ad-hoc chart/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalled();
     });
+
+    const calculateCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes("/api/calculate"),
+    );
+    expect(calculateCalls).toHaveLength(1);
 
     expect(await screen.findByText("Sun")).toBeInTheDocument();
     expect(screen.getByText(/julian day \(ut\)/i)).toBeInTheDocument();
 
     expect(
-      screen.getByRole("button", { name: /generate scientific chart/i }),
+      screen.getByRole("button", { name: /generate ad-hoc chart/i }),
     ).toHaveAttribute("data-slot", "button");
   });
 
@@ -119,7 +124,7 @@ describe("CalculateFormClient", () => {
       },
     });
 
-    render(<CalculateFormClient />);
+    render(<CalculateFormClient isSignedIn={false} />);
 
     await user.type(screen.getByLabelText(/full name/i), "Test User");
     fireEvent.change(screen.getByLabelText(/time of birth/i), {
@@ -134,7 +139,7 @@ describe("CalculateFormClient", () => {
 
     await selectAnyDate(user);
 
-    await user.click(screen.getByRole("button", { name: /generate scientific chart/i }));
+    await user.click(screen.getByRole("button", { name: /generate ad-hoc chart/i }));
 
     expect(await screen.findByText("Calculation Error")).toBeInTheDocument();
     expect(await screen.findByText("Failed to calculate chart data.")).toBeInTheDocument();

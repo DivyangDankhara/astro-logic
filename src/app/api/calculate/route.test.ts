@@ -64,6 +64,7 @@ describe("POST /api/calculate", () => {
     expect(response.status).toBe(200);
     expect(payload.metadata.siderealMode).toBe("Lahiri");
     expect(payload.bodies).toHaveLength(1);
+    expect(payload.meta.storageMode).toBe("local");
   });
 
   it("returns 400 for validation failures", async () => {

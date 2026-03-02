@@ -7,27 +7,43 @@ import { calculateRequestSchema } from "@/lib/validation/calculate";
 
 export const runtime = "nodejs";
 
+type CalculateAdHocResponse = ReturnType<typeof calculateChartData> & {
+  meta: {
+    storageMode: "local";
+  };
+};
+
+function toError(message: string, details?: unknown): ErrorResponse {
+  return {
+    error: message,
+    details,
+  };
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     const payload = await request.json();
     const parsedPayload = calculateRequestSchema.parse(payload);
     const result = calculateChartData(parsedPayload);
 
-    return NextResponse.json(result, { status: 200 });
-  } catch (error) {
-    if (error instanceof ZodError) {
-      const response: ErrorResponse = {
-        error: "Invalid request payload.",
-        details: error.flatten(),
-      };
-
-      return NextResponse.json(response, { status: 400 });
-    }
-
-    const response: ErrorResponse = {
-      error: "Failed to calculate chart data.",
+    const response: CalculateAdHocResponse = {
+      ...result,
+      meta: {
+        storageMode: "local",
+      },
     };
 
-    return NextResponse.json(response, { status: 500 });
+    return NextResponse.json(response, { status: 200 });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        toError("Invalid request payload.", error.flatten()),
+        { status: 400 },
+      );
+    }
+
+    return NextResponse.json(toError("Failed to calculate chart data."), {
+      status: 500,
+    });
   }
 }

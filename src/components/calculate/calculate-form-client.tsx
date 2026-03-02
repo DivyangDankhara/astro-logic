@@ -3,9 +3,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, isValid, parseISO } from "date-fns";
 import { CalendarIcon, Loader2, MapPin } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 
+import { GooglePlaceAutocomplete } from "@/components/location/google-place-autocomplete";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { COMMON_TIMEZONES } from "@/lib/astrology/constants";
 import type { CalculateResponse, ErrorResponse } from "@/lib/astrology/types";
+import { saveAdHocHistoryRecord } from "@/lib/charts/ad-hoc-history";
 import {
   calculateRequestSchema,
   type CalculateRequest,
@@ -46,10 +49,22 @@ import {
 
 const TIMEZONE_LIST_ID = "timezone-list";
 
-export function CalculateFormClient() {
+interface CalculateFormClientProps {
+  googleMapsApiKey?: string;
+  isSignedIn: boolean;
+}
+
+interface CalculateApiResponse extends CalculateResponse {
+  meta?: {
+    storageMode?: "local";
+  };
+}
+
+export function CalculateFormClient({ googleMapsApiKey, isSignedIn }: CalculateFormClientProps) {
   const [result, setResult] = useState<CalculateResponse | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
+  const [placeSearchValue, setPlaceSearchValue] = useState("");
 
   const form = useForm<CalculateRequest>({
     resolver: zodResolver(calculateRequestSchema),
@@ -65,6 +80,7 @@ export function CalculateFormClient() {
 
   async function onSubmit(values: CalculateRequest) {
     setApiError(null);
+
     try {
       const response = await fetch("/api/calculate", {
         method: "POST",
@@ -81,8 +97,21 @@ export function CalculateFormClient() {
         return;
       }
 
-      const payload = (await response.json()) as CalculateResponse;
-      setResult(payload);
+      const payload = (await response.json()) as CalculateApiResponse;
+      setResult({
+        metadata: payload.metadata,
+        bodies: payload.bodies,
+      });
+
+      saveAdHocHistoryRecord({
+        birthInput: values,
+        calculationResult: {
+          metadata: payload.metadata,
+          bodies: payload.bodies,
+        },
+        origin: isSignedIn ? "logged_in_ad_hoc" : "guest",
+      });
+
       setShowRawJson(false);
     } catch {
       setResult(null);
@@ -102,12 +131,36 @@ export function CalculateFormClient() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <Card className="border-slate-200">
         <CardHeader>
-          <CardTitle>Enter Birth Details</CardTitle>
+          <CardTitle>Ad-hoc Birth Details</CardTitle>
           <CardDescription>
-            Provide precise local birth data for sidereal chart calculations.
+            Ad-hoc calculations are stored only in browser local history, never in server database.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <Alert className="mb-5">
+            <MapPin className="size-4" />
+            <AlertTitle>Ad-hoc mode (local-only)</AlertTitle>
+            <AlertDescription>
+              Use this for people not associated with profiles. Results are saved to
+              local browser history only.
+            </AlertDescription>
+          </Alert>
+
+          <div className="mb-5 flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/guest-charts">View local history</Link>
+            </Button>
+            {isSignedIn ? (
+              <Button asChild size="sm">
+                <Link href="/profile">Manage profile Kundli</Link>
+              </Button>
+            ) : (
+              <Button asChild size="sm">
+                <Link href="/sign-in">Sign in for profile-based Kundli</Link>
+              </Button>
+            )}
+          </div>
+
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               <FormField
@@ -145,7 +198,7 @@ export function CalculateFormClient() {
                               >
                                 {selectedDate
                                   ? format(selectedDate, "PPP")
-                                  : "Select your birth date"}
+                                  : "Select birth date"}
                                 <CalendarIcon className="size-4" />
                               </Button>
                             </FormControl>
@@ -207,13 +260,36 @@ export function CalculateFormClient() {
                       ))}
                     </datalist>
                     <FormDescription>
-                      Use an IANA timezone such as <code>Asia/Kolkata</code> or{" "}
-                      <code>America/New_York</code>.
+                      Timezone stays user-controlled even after place autocomplete.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Birth Place Search (Google Maps)</label>
+                <GooglePlaceAutocomplete
+                  apiKey={googleMapsApiKey}
+                  value={placeSearchValue}
+                  onValueChange={setPlaceSearchValue}
+                  onPlaceSelected={(selection) => {
+                    form.setValue("latitude", selection.latitude, {
+                      shouldValidate: true,
+                    });
+                    form.setValue("longitude", selection.longitude, {
+                      shouldValidate: true,
+                    });
+                    setPlaceSearchValue(selection.label);
+                  }}
+                />
+                {!googleMapsApiKey ? (
+                  <p className="text-xs text-slate-600">
+                    Google Maps API key is not configured. Manual latitude/longitude remains
+                    available.
+                  </p>
+                ) : null}
+              </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <FormField
@@ -271,15 +347,6 @@ export function CalculateFormClient() {
                 />
               </div>
 
-              <Alert>
-                <MapPin className="size-4" />
-                <AlertTitle>Location input for MVP</AlertTitle>
-                <AlertDescription>
-                  Manual latitude/longitude entry is enabled now. Google Maps autocomplete is
-                  planned for the next iteration.
-                </AlertDescription>
-              </Alert>
-
               <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? (
                   <>
@@ -287,7 +354,7 @@ export function CalculateFormClient() {
                     Calculating...
                   </>
                 ) : (
-                  "Generate Scientific Chart"
+                  "Generate Ad-hoc Chart"
                 )}
               </Button>
             </form>
@@ -297,7 +364,7 @@ export function CalculateFormClient() {
 
       <Card className="border-slate-200">
         <CardHeader>
-          <CardTitle>Computed Sidereal Results</CardTitle>
+          <CardTitle>Computed Planetary Positions</CardTitle>
           <CardDescription>
             Swiss Ephemeris output using Lahiri ayanamsha and sidereal planetary longitudes.
           </CardDescription>
@@ -312,7 +379,7 @@ export function CalculateFormClient() {
 
           {!result ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
-              Submit the form to view exact planetary longitudes, rashis, and nakshatras.
+              Submit the form to view planetary longitudes, rashis, and nakshatras.
             </div>
           ) : (
             <>
